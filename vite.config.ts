@@ -7,7 +7,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    base: '/Hor-rios-Etelvina-/',
+    base: './', // Torna todos os caminhos relativos, o que funciona melhor no GitHub Pages
     plugins: [
       react(), 
       tailwindcss(),
