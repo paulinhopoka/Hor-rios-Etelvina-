@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScheduleData, Lesson, DaySchedule } from './types';
 import { factoryData, rawManha, rawTarde, timeBounds } from './data';
-import { Menu, Moon, Sun, Settings, Trash2, RotateCcw, Eye, EyeOff, Edit3, GripVertical, X, Check, Save, RefreshCw, Share2, Download } from 'lucide-react';
+import { Menu, Moon, Sun, Settings, Trash2, RotateCcw, Eye, EyeOff, Edit3, GripVertical, X, Check, Save, RefreshCw, Share2, Download, Search } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 const STORAGE_KEY = 'gestaoHorariosSchottz_v5';
@@ -16,10 +16,11 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   
   // Modals State
-  const [activeModal, setActiveModal] = useState<'edit' | 'system' | 'reset' | 'share' | null>(null);
+  const [activeModal, setActiveModal] = useState<'edit' | 'system' | 'reset' | 'share' | 'findTeacher' | null>(null);
   const [editModalData, setEditModalData] = useState<{index: number, lesson: Lesson} | null>(null);
   const [editSubject, setEditSubject] = useState('');
   const [editTeacher, setEditTeacher] = useState('');
+  const [searchTeacherQuery, setSearchTeacherQuery] = useState('');
   
   // Drag and Drop State
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -268,6 +269,59 @@ export default function App() {
     return p > 0 && p < 100;
   };
 
+  const getTeacherSchedule = (teacherName: string) => {
+    if (!teacherName) return [];
+    const scheduleList: any[] = [];
+    
+    ['manha', 'tarde'].forEach(sh => {
+      const shiftData = appData.shifts[sh];
+      if (!shiftData) return;
+      
+      const boundsData = timeBounds[sh as 'manha' | 'tarde'];
+      
+      shiftData.classesList.forEach(cls => {
+        const daySched = shiftData.schedules[cls]?.[currentDay] || [];
+        daySched.forEach((lesson, index) => {
+          if (lesson.state === 'interval' || lesson.hidden) return;
+          
+          const currentTeach = lesson.tempT !== null ? lesson.tempT : lesson.t;
+          const currentSubj = lesson.tempS !== null ? lesson.tempS : lesson.s;
+          
+          if (currentTeach.toLowerCase().includes(teacherName.toLowerCase()) && currentTeach.trim() !== '') {
+            const start = boundsData[index].start;
+            const end = boundsData[index].end;
+            
+            const now = currentTime;
+            const currentMins = now.getHours() * 60 + now.getMinutes();
+            const [shH, smM] = start.split(':').map(Number);
+            const [ehH, emM] = end.split(':').map(Number);
+            const startMins = shH * 60 + smM;
+            const endMins = ehH * 60 + emM;
+            
+            let status = 'future';
+            if (currentMins >= startMins && currentMins < endMins) status = 'current';
+            else if (currentMins >= endMins) status = 'past';
+            
+            scheduleList.push({
+              shift: sh,
+              className: cls,
+              subject: currentSubj,
+              teacher: currentTeach,
+              start,
+              end,
+              startMins,
+              status
+            });
+          }
+        });
+      });
+    });
+    
+    // Sort by start time
+    scheduleList.sort((a, b) => a.startMins - b.startMins);
+    return scheduleList;
+  };
+
   // Autocomplete lists
   const getAutocompleteLists = () => {
     const subjects = new Set<string>();
@@ -356,6 +410,10 @@ export default function App() {
               <Menu />
             </button>
             <div className={`dropdown-content ${menuOpen ? 'show' : ''}`}>
+              <button onClick={() => { setActiveModal('findTeacher'); setMenuOpen(false); }}>
+                <Search size={18} />
+                Encontrar Professor
+              </button>
               <button onClick={handleShare}>
                 <Share2 size={18} />
                 Compartilhar Horário
@@ -648,6 +706,79 @@ export default function App() {
         </div>
       )}
 
+      {activeModal === 'findTeacher' && (
+        <div className="modal-overlay show">
+          <div className="modal" style={{ maxWidth: '500px', width: '90%' }}>
+            <h3>🔍 Encontrar Professor</h3>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
+              Veja onde o professor está lecionando hoje ({currentDay}).
+            </p>
+            <div className="form-group">
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="Digite o nome do professor..."
+                list="teachers-list" 
+                value={searchTeacherQuery}
+                onChange={(e) => setSearchTeacherQuery(e.target.value)}
+              />
+            </div>
+            
+            <div className="teacher-schedule-list" style={{ maxHeight: '50vh', overflowY: 'auto', marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {searchTeacherQuery && getTeacherSchedule(searchTeacherQuery).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                  Nenhuma aula encontrada para este professor hoje.
+                </div>
+              ) : (
+                getTeacherSchedule(searchTeacherQuery).map((item, idx) => (
+                  <div key={idx} style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: item.status === 'current' ? '2px solid var(--secondary)' : '1px solid var(--border-color)',
+                    backgroundColor: item.status === 'current' ? 'var(--progress-bg)' : 
+                                     item.status === 'past' ? 'var(--bg-body)' : 'var(--bg-card)',
+                    opacity: item.status === 'past' ? 0.6 : 1,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    boxShadow: item.status === 'current' ? '0 0 10px rgba(16, 185, 129, 0.2)' : 'none'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: item.status === 'current' ? 'var(--secondary)' : 'var(--text-main)' }}>
+                        Turma {item.className}
+                      </div>
+                      <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                        {item.subject} • {item.shift === 'manha' ? 'Manhã' : 'Tarde'}
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Prof: {item.teacher}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{item.start} - {item.end}</div>
+                      <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 'bold', 
+                        color: item.status === 'current' ? 'var(--secondary)' : 
+                               item.status === 'past' ? 'var(--text-muted)' : 'var(--primary)',
+                        marginTop: '4px'
+                      }}>
+                        {item.status === 'current' ? 'Agora' : item.status === 'past' ? 'Finalizada' : 'Próxima'}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <div className="modal-actions" style={{ marginTop: '20px' }}>
+              <button className="btn-modal btn-cancel" style={{ width: '100%' }} onClick={() => {
+                setActiveModal(null);
+                setSearchTeacherQuery('');
+              }}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <datalist id="subjects-list">
         {subjects.map(s => <option key={s} value={s} />)}
       </datalist>
@@ -656,4 +787,4 @@ export default function App() {
       </datalist>
     </div>
   );
-}
+          }
